@@ -1,0 +1,79 @@
+# ks-validate: stateful WordCountDemo that lights up every field on the USM
+# Kafka Streams page.
+#   - metrics.recording.level=DEBUG  -> RocksDB / e2e-latency / processor metrics
+#   - count() (RocksDB state store)  -> RocksDB metrics (stateless apps have none)
+#   - cp-kafka image ships libstdc++ (RocksDB needs it; apache/kafka images don't)
+# No telemetry config needed in the app: KIP-714 client metrics are pushed to the
+# broker, which forwards them to the USM Agent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ks-validate-app
+  namespace: usm
+  labels: { app: ks-validate-app }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ks-validate-app }
+  template:
+    metadata:
+      labels: { app: ks-validate-app }
+    spec:
+      containers:
+        - name: kstreams
+          image: confluentinc/cp-kafka:8.3.0
+          env:
+            - { name: KAFKA_HEAP_OPTS, value: "-Xmx512m -Xms256m" }
+          command: ["bash", "-c"]
+          args:
+            - |
+              cat > /tmp/streams.properties <<'EOF'
+              bootstrap.servers=kafka.usm.svc.cluster.local:9071
+              application.id=ks-validate
+              num.stream.threads=2
+              metrics.recording.level=DEBUG
+              commit.interval.ms=2000
+              statestore.cache.max.bytes=0
+              state.dir=/tmp/kafka-streams
+              EOF
+              exec kafka-run-class org.apache.kafka.streams.examples.wordcount.WordCountDemo /tmp/streams.properties
+          volumeMounts:
+            - { name: state, mountPath: /tmp }
+          resources:
+            requests: { cpu: 300m, memory: 768Mi }
+            limits: { cpu: "1", memory: 1536Mi }
+      volumes:
+        - { name: state, emptyDir: {} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ks-validate-feeder
+  namespace: usm
+  labels: { app: ks-validate-feeder }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ks-validate-feeder }
+  template:
+    metadata:
+      labels: { app: ks-validate-feeder }
+    spec:
+      containers:
+        - name: feeder
+          image: confluentinc/cp-kafka:8.3.0
+          command: ["bash", "-c"]
+          args:
+            - |
+              BS=kafka.usm.svc.cluster.local:9071
+              WORDS=(alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango)
+              until kafka-broker-api-versions --bootstrap-server $BS >/dev/null 2>&1; do echo "waiting for broker..."; sleep 5; done
+              while true; do
+                for n in $(seq 1 10); do
+                  line=""; for i in 1 2 3 4 5 6; do line="$line ${WORDS[$RANDOM % ${#WORDS[@]}]}"; done; echo "$line"
+                done | kafka-console-producer --bootstrap-server $BS --topic streams-plaintext-input
+                sleep 1
+              done
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 300m, memory: 512Mi }

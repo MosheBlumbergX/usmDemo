@@ -1,0 +1,28 @@
+# Source-initiated cluster link CP (EKS) -> Confluent Cloud, source side.
+# CP brokers open the connection to the Enterprise cluster's PrivateLink
+# endpoint, authenticating with the cloud-app API key. The credentials are
+# stored encrypted with the Kafka CR's passwordEncoder.
+apiVersion: platform.confluent.io/v1beta1
+kind: ClusterLink
+metadata:
+  name: cp-to-cloud-source
+  namespace: usm
+spec:
+  name: cp-to-cloud
+  sourceInitiatedLink:
+    linkMode: Source
+  destinationKafkaCluster:
+    bootstrapEndpoint: ${CCLOUD_BOOTSTRAP}
+    clusterID: ${CCLOUD_CLUSTER_ID}
+    kafkaRestClassRef:
+      name: krc-cloud
+    authentication:
+      type: plain
+      jaasConfigPassThrough:
+        secretRef: ccloud-link-jaas
+    tls:
+      enabled: true
+      secretRef: ccloud-tls-certs
+  sourceKafkaCluster:
+    kafkaRestClassRef:
+      name: krc-cfk

@@ -1,0 +1,25 @@
+# OPTIONAL: CFK resources for CP Flink (CMF). Applied by scripts/flink.sh after
+# the CMF + Flink operator Helm charts are installed in the `flink` namespace.
+apiVersion: platform.confluent.io/v1beta1
+kind: CMFRestClass
+metadata:
+  name: cmf
+  namespace: flink
+spec:
+  cmfRest:
+    endpoint: http://cmf-service.flink.svc.cluster.local:80
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: FlinkEnvironment
+metadata:
+  name: env1
+  namespace: flink
+spec:
+  cmfRestClassRef:
+    name: cmf
+    namespace: flink
+  kubernetesNamespace: flink
+  flinkApplicationDefaults:
+    spec:
+      flinkConfiguration:
+        taskmanager.numberOfTaskSlots: "2"

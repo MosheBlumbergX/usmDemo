@@ -1,0 +1,23 @@
+# USM Agent: collects metadata + metrics from KRaft/Kafka/Connect and forwards
+# them to Confluent Cloud over PrivateLink.
+#
+# ${CCLOUD_ENV_ID} and ${USM_FRONTDOOR_URL} are filled in from Terraform outputs
+# by scripts/deploy-cp.sh (they correspond to ENVIRONMENT_ID / FRONTDOOR_URL in
+# the config file the USM registration wizard generates).
+apiVersion: platform.confluent.io/v1beta1
+kind: USMAgent
+metadata:
+  name: usm-agent
+  namespace: usm
+spec:
+  replicas: 1
+  image:
+    application: confluentinc/cp-usm-agent:1.2.1
+    init: confluentinc/confluent-init-container:3.3.1
+  confluentCloudClient:
+    endpoint: ${USM_FRONTDOOR_URL}
+    environmentId: ${CCLOUD_ENV_ID}
+    authentication:
+      type: basic
+      basic:
+        secretRef: ccloud-usm-agent-credential # must NOT be "<agent-name>-ccloud-credential": CFK generates a secret with that name

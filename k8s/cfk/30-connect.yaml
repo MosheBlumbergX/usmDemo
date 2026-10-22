@@ -1,0 +1,44 @@
+# Kafka Connect on CP with plugins pulled from Confluent Hub at startup.
+# Connectors themselves are declared as CFK `Connector` CRs in k8s/connectors/.
+apiVersion: platform.confluent.io/v1beta1
+kind: Connect
+metadata:
+  name: connect
+  namespace: usm
+spec:
+  replicas: 2
+  image:
+    application: confluentinc/cp-server-connect:8.3.0
+    init: confluentinc/confluent-init-container:3.3.1
+  build:
+    type: onDemand
+    onDemand:
+      plugins:
+        locationType: confluentHub
+        confluentHub:
+          - name: kafka-connect-datagen
+            owner: confluentinc
+            version: 0.7.3
+          - name: kafka-connect-s3
+            owner: confluentinc
+            version: 12.1.14
+  podTemplate:
+    # Bound to an IAM role (S3 write) via EKS Pod Identity - see terraform/s3.tf.
+    serviceAccountName: connect
+  configOverrides:
+    server:
+      # Workaround for CP Connect 7.9.6-7.9.8 / 8.1.2-8.1.4 / 8.2.0-8.2.2 / 8.3.0:
+      # these versions don't emit some metrics USM needs by default.
+      # https://docs.confluent.io/cloud/current/usm/troubleshoot.html
+      - confluent.telemetry.exporter._usm.metrics.include=io.confluent.kafka.connect/.*(connect/request_size_avg|connect_worker/connector_failed_task_count|connect_worker/connector_total_task_count|sink_task/sink_record_send_total|source_task/source_record_write_total|deadletterqueue_produce_requests).*|io.confluent.kafka.client/.*(consumer_fetch_manager/bytes_consumed_total|producer/outgoing_byte_total).*|io.confluent.hybrid/node_count
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka.usm.svc.cluster.local:9093
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: connect-kafka-credential
+    schemaRegistry:
+      url: http://schemaregistry.usm.svc.cluster.local:8081
+    usmAgentClient:
+      url: http://usm-agent.usm.svc.cluster.local:10000

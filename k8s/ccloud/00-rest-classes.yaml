@@ -1,0 +1,39 @@
+# Admin REST endpoints CFK uses to manage the cluster link (and the cloud topic).
+# ${...} values are filled in from Terraform outputs by scripts/deploy-ccloud.sh.
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaRestClass
+metadata:
+  name: krc-cfk
+  namespace: usm
+spec:
+  kafkaClusterRef:
+    name: kafka
+---
+# Confluent Cloud Enterprise cluster, via its PrivateLink REST endpoint.
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaRestClass
+metadata:
+  name: krc-cloud
+  namespace: usm
+spec:
+  kafkaRest:
+    endpoint: ${CCLOUD_REST_ENDPOINT}
+    kafkaClusterID: ${CCLOUD_CLUSTER_ID}
+    authentication:
+      type: basic
+      basic:
+        secretRef: ccloud-rest-credential
+---
+# A cloud-native topic, managed by CFK in Confluent Cloud. Filled by the
+# fully-managed Datagen connector (scripts/deploy-ccloud.sh).
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaTopic
+metadata:
+  name: ccloud-orders
+  namespace: usm
+spec:
+  name: orders
+  partitionCount: 6
+  replicas: 3
+  kafkaRestClassRef:
+    name: krc-cloud

@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars to override defaults (terraform.tfvars is git-ignored).
+# name               = "usm-demo"
+# region             = "us-east-1"
+# node_instance_type = "m5.xlarge"
+# node_count         = 4
+
+# Tags required by your AWS account's tagging policy, e.g.:
+# tags = {
+#   owner_email      = "you@example.com"
+#   cflt_environment = "devel"
+#   cflt_keep_until  = "2026-12-31"
+# }

@@ -1,0 +1,24 @@
+# Schema Linking CP Schema Registry -> Confluent Cloud Schema Registry.
+# contextType NONE copies subjects as-is into the destination's default context,
+# keeping the schema IDs, so the Avro records in the mirrored test2 topic
+# (which embed CP schema IDs) deserialize in Confluent Cloud unchanged.
+# The exporter puts the exported subjects in IMPORT (read-only) mode in CCloud.
+apiVersion: platform.confluent.io/v1beta1
+kind: SchemaExporter
+metadata:
+  name: cp-to-cloud
+  namespace: usm
+spec:
+  sourceCluster:
+    schemaRegistryClusterRef:
+      name: schemaregistry
+  destinationCluster:
+    schemaRegistryRest:
+      endpoint: ${CCLOUD_SR_URL}
+      authentication:
+        type: basic
+        basic:
+          secretRef: ccloud-sr-credential
+  subjects:
+    - test2-value
+  contextType: NONE

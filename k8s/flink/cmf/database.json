@@ -1,0 +1,12 @@
+{
+  "apiVersion": "cmf.confluent.io/v1",
+  "kind": "KafkaDatabase",
+  "metadata": { "name": "kafka-db" },
+  "spec": {
+    "kafkaCluster": {
+      "connectionConfig": {
+        "bootstrap.servers": "kafka.usm.svc.cluster.local:9071"
+      }
+    }
+  }
+}

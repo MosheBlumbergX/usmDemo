@@ -1,0 +1,37 @@
+# Consumer running on EKS, reading from the Confluent Cloud cluster over
+# PrivateLink: the mirrored test1 topic plus the cloud-native orders topic.
+# Shows up as a consumer group (with lag) on the cloud cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ccloud-consumer
+  namespace: usm
+  labels: { app: ccloud-consumer }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ccloud-consumer }
+  template:
+    metadata:
+      labels: { app: ccloud-consumer }
+    spec:
+      containers:
+        - name: consumer
+          image: confluentinc/cp-kafka:8.3.0
+          envFrom:
+            - secretRef:
+                name: ccloud-client # BOOTSTRAP / API_KEY / API_SECRET
+          command: ["bash", "-c"]
+          args:
+            - |
+              cat > /tmp/client.properties <<EOF
+              security.protocol=SASL_SSL
+              sasl.mechanism=PLAIN
+              sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${API_KEY}" password="${API_SECRET}";
+              EOF
+              exec kafka-console-consumer --bootstrap-server "$BOOTSTRAP" \
+                --include 'test1|orders' --group ccloud-demo-consumer \
+                --consumer.config /tmp/client.properties > /dev/null
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }

@@ -1,0 +1,67 @@
+# Confluent Platform 8.3 (KRaft) - 3 controllers, 3 brokers.
+#
+# USM telemetry is CFK-native: `usmAgentClient.clientMetricsEnabled: true` makes
+# CFK 3.3 wire the broker telemetry exporter to the USM Agent and inject the
+# KIP-714/KIP-1076 client-metrics subscription (incl. org.apache.kafka.stream.*),
+# so Kafka Streams apps show up in USM without any manual configOverrides.
+#
+# CP 8.3 is required for the USM Kafka Streams page (8.2.x drops the String
+# gauges stream.state / thread.state / application.id).
+apiVersion: platform.confluent.io/v1beta1
+kind: KRaftController
+metadata:
+  name: kraftcontroller
+  namespace: usm
+spec:
+  replicas: 3
+  image:
+    application: confluentinc/cp-server:8.3.0
+    init: confluentinc/confluent-init-container:3.3.1
+  dataVolumeCapacity: 10Gi
+  storageClass:
+    name: gp3
+  dependencies:
+    usmAgentClient:
+      url: http://usm-agent.usm.svc.cluster.local:10000
+      clientMetricsEnabled: true
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: usm
+spec:
+  replicas: 3
+  image:
+    application: confluentinc/cp-server:8.3.0
+    init: confluentinc/confluent-init-container:3.3.1
+  dataVolumeCapacity: 20Gi
+  storageClass:
+    name: gp3
+  metricReporter:
+    enabled: false
+  # Encrypts credentials stored in cluster link configs (CP -> CCloud link).
+  passwordEncoder:
+    secretRef: password-encoder
+  configOverrides:
+    server:
+      # Flink's exactly-once Kafka sink uses a 1h transaction timeout; the broker
+      # default max (15m) makes the optional drop-gender job fail on InitProducerId.
+      - transaction.max.timeout.ms=3600000
+  listeners:
+    # internal (9071, PLAINTEXT) is used by Schema Registry and the Kafka Streams demo.
+    # SASL/PLAIN listener used by Connect and the persistent consumer.
+    custom:
+      - name: sasl
+        port: 9093
+        authentication:
+          type: plain
+          jaasConfig:
+            secretRef: sasl-credential
+  dependencies:
+    kRaftController:
+      clusterRef:
+        name: kraftcontroller
+    usmAgentClient:
+      url: http://usm-agent.usm.svc.cluster.local:10000
+      clientMetricsEnabled: true

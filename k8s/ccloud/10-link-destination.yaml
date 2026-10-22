@@ -1,0 +1,22 @@
+# Source-initiated cluster link CP (EKS) -> Confluent Cloud, destination side.
+# Must exist BEFORE the source-side CR. Mirror topics are declared here.
+# The link is INBOUND on Confluent Cloud: CCloud never connects to EKS; the CP
+# brokers dial out over PrivateLink (see 20-link-source.yaml).
+apiVersion: platform.confluent.io/v1beta1
+kind: ClusterLink
+metadata:
+  name: cp-to-cloud-dest
+  namespace: usm
+spec:
+  name: cp-to-cloud
+  sourceInitiatedLink:
+    linkMode: Destination
+  destinationKafkaCluster:
+    kafkaRestClassRef:
+      name: krc-cloud
+  sourceKafkaCluster:
+    clusterID: ${CP_CLUSTER_ID}
+    bootstrapEndpoint: placeholder-not-used-for-inbound:9092
+  mirrorTopics:
+    - name: test1   # users (JSON)
+    - name: test2   # pageviews (Avro; schema IDs refer to the CP Schema Registry)

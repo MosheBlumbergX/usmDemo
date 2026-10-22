@@ -1,0 +1,19 @@
+apiVersion: platform.confluent.io/v1beta1
+kind: SchemaRegistry
+metadata:
+  name: schemaregistry
+  namespace: usm
+spec:
+  replicas: 1
+  image:
+    application: confluentinc/cp-schema-registry:8.3.0
+    init: confluentinc/confluent-init-container:3.3.1
+  # Schema Linking: CP SR exports schemas to the Confluent Cloud SR
+  # (k8s/ccloud/40-schema-exporter.yaml). The password encoder protects the
+  # destination credentials stored in the exporter config.
+  enableSchemaExporter: true
+  passwordEncoder:
+    secretRef: password-encoder
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka.usm.svc.cluster.local:9071

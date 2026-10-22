@@ -1,0 +1,43 @@
+# --- Secrets / credentials -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+generated/
+
+# --- Terraform -------------------------------------------------------------
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.lock.info
+tfplan
+*.tfplan
+
+# --- Kubernetes / local tooling -------------------------------------------
+.kubeconfig
+kubeconfig*
+confluent-for-kubernetes/
+*.tgz
+
+# --- Internal docs (not for public sharing) --------------------------------
+*.pdf
+
+# --- OS / editors ----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

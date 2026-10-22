@@ -1,0 +1,70 @@
+# Connectors running on the CP Connect cluster, managed declaratively by CFK.
+# They show up under the registered Connect cluster in USM.
+#
+# ${S3_BUCKET} and ${AWS_REGION} are substituted by scripts/deploy-cp.sh.
+
+# users (JSON, no schema) -> test1. The optional Flink job reads this topic.
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: datagen-users
+  namespace: usm
+spec:
+  class: io.confluent.kafka.connect.datagen.DatagenConnector
+  taskMax: 1
+  connectClusterRef:
+    name: connect
+  configs:
+    kafka.topic: test1
+    quickstart: users
+    max.interval: "500"
+    iterations: "-1"
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter.schemas.enable: "false"
+---
+# pageviews (Avro, schema in CP Schema Registry) -> test2
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: datagen-pageviews
+  namespace: usm
+spec:
+  class: io.confluent.kafka.connect.datagen.DatagenConnector
+  taskMax: 1
+  connectClusterRef:
+    name: connect
+  configs:
+    kafka.topic: test2
+    quickstart: pageviews
+    max.interval: "200"
+    iterations: "-1"
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: io.confluent.connect.avro.AvroConverter
+    value.converter.schema.registry.url: http://schemaregistry.usm.svc.cluster.local:8081
+---
+# test1 -> S3 (credentials via EKS Pod Identity, no keys in config)
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: s3-sink-users
+  namespace: usm
+spec:
+  class: io.confluent.connect.s3.S3SinkConnector
+  taskMax: 2
+  connectClusterRef:
+    name: connect
+  configs:
+    topics: test1
+    s3.bucket.name: ${S3_BUCKET}
+    s3.region: ${AWS_REGION}
+    storage.class: io.confluent.connect.s3.storage.S3Storage
+    format.class: io.confluent.connect.s3.format.json.JsonFormat
+    partitioner.class: io.confluent.connect.storage.partitioner.DefaultPartitioner
+    flush.size: "1000"
+    # Wall-clock rotation so a file lands in S3 every minute regardless of volume.
+    rotate.schedule.interval.ms: "60000"
+    timezone: UTC
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter.schemas.enable: "false"
