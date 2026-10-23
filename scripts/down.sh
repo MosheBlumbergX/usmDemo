@@ -36,9 +36,15 @@ if kubectl get ns "$NS" >/dev/null 2>&1; then
   log "deleting Confluent Platform"
   if kubectl get ns flink >/dev/null 2>&1; then
     kubectl -n flink delete flinkdeployment --all --ignore-not-found || true
-    # FlinkEnvironment first: its finalizer reaches CMF through the CMFRestClass,
-    # so deleting both at once (kubectl delete -f) hangs forever.
-    kubectl -n flink delete flinkenvironment --all --ignore-not-found --timeout=120s || true
+    # The FlinkEnvironment finalizer asks CMF to delete the environment, which
+    # CMF refuses while it still holds compute pools/statements, so the delete
+    # hangs forever. CMF and its database are removed next anyway: give it a
+    # moment, then drop the finalizer.
+    kubectl -n flink delete flinkenvironment --all --ignore-not-found --wait=false || true
+    sleep 20
+    for fe in $(kubectl -n flink get flinkenvironment -o name 2>/dev/null); do
+      kubectl -n flink patch "$fe" --type=merge -p '{"metadata":{"finalizers":null}}' || true
+    done
     kubectl delete -f "$REPO_ROOT/k8s/flink/cfk-flink.yaml" --ignore-not-found || true
     helm -n flink uninstall cmf cp-flink-kubernetes-operator 2>/dev/null || true
     kubectl -n flink delete pvc --all --wait=true || true
