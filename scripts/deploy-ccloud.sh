@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Step 5: put the Confluent Cloud Enterprise cluster to work.
 #   - CFK KafkaRestClasses + cloud topic `orders`
-#   - source-initiated cluster link CP -> CCloud mirroring users/pageviews
+#   - source-initiated cluster link CP -> CCloud mirroring users/pageviews/clickstream
 #   - Schema Linking CP SR -> CCloud SR (pageviews-value, same schema IDs)
+#   - Schema Linking for clickstream-value (own context; schema GUID in record headers)
 #   - fully-managed Datagen connector -> orders
 #   - consumer on EKS reading from CCloud over PrivateLink
 #   - console-proxy for browsing the private cluster from a laptop (make console)
@@ -56,6 +57,8 @@ wait_for clusterlink cp-to-cloud-source 300 CREATED '{.status.state}'
 log "schema linking: CP Schema Registry -> Confluent Cloud Schema Registry"
 apply_rendered "$REPO_ROOT/k8s/ccloud/40-schema-exporter.yaml"
 wait_for schemaexporter cp-to-cloud 300 RUNNING '{.status.exporterStatus}'
+apply_rendered "$REPO_ROOT/k8s/ccloud/41-schema-exporter-clickstream.yaml"
+wait_for schemaexporter cp-to-cloud-clickstream 300 RUNNING '{.status.exporterStatus}'
 
 log "fully-managed Datagen connector -> orders"
 ccloud_api PUT "/connect/v1/environments/$ENV_ID/clusters/$CCLOUD_CLUSTER_ID/connectors/datagen-orders/config" \
@@ -78,6 +81,7 @@ wait_for clusterlink cp-to-cloud-dest 300 ACTIVE '{.status.mirrorTopics.users.st
 log "consumer on EKS reading from Confluent Cloud"
 kubectl apply -f "$REPO_ROOT/k8s/ccloud/30-cloud-consumer.yaml"
 kubectl apply -f "$REPO_ROOT/k8s/ccloud/50-cloud-avro-consumer.yaml"
+kubectl apply -f "$REPO_ROOT/k8s/ccloud/55-cloud-clickstream-consumer.yaml"
 
 log "console-proxy (Cloud Console access from a laptop, see make console)"
 kubectl apply -f "$REPO_ROOT/k8s/ccloud/60-console-proxy.yaml"

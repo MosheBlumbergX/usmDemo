@@ -20,6 +20,18 @@ spec:
   partitionCount: 3
   replicas: 3
 ---
+# Avro clickstream from datagen-clickstream. Schema ID in a record header
+# (GUID), never in the payload: see docs/schema-id-in-headers.md.
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaTopic
+metadata:
+  name: clickstream
+  namespace: usm
+spec:
+  kafkaClusterRef: { name: kafka }
+  partitionCount: 3
+  replicas: 3
+---
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:

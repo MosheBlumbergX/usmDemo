@@ -1,7 +1,7 @@
 # Connectors running on the CP Connect cluster, managed declaratively by CFK.
 # They show up under the registered Connect cluster in USM.
 #
-# ${S3_BUCKET} and ${AWS_REGION} are substituted by scripts/deploy-cp.sh.
+# ${S3_BUCKET} and ${AWS_REGION} are substituted by scripts/deploy-workloads.sh.
 
 # JSON users (no schema) -> users. The optional Flink job reads this topic.
 apiVersion: platform.confluent.io/v1beta1
@@ -42,6 +42,29 @@ spec:
     key.converter: org.apache.kafka.connect.storage.StringConverter
     value.converter: io.confluent.connect.avro.AvroConverter
     value.converter.schema.registry.url: http://schemaregistry.usm.svc.cluster.local:8081
+---
+# Avro clickstream -> clickstream, with the schema ID in a Kafka record header
+# (__value_schema_id = schema GUID) instead of the payload prefix. Its own topic
+# and subject (clickstream-value): header and classic formats are never mixed.
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: datagen-clickstream
+  namespace: usm
+spec:
+  class: io.confluent.kafka.connect.datagen.DatagenConnector
+  taskMax: 1
+  connectClusterRef:
+    name: connect
+  configs:
+    kafka.topic: clickstream
+    quickstart: clickstream
+    max.interval: "500"
+    iterations: "-1"
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: io.confluent.connect.avro.AvroConverter
+    value.converter.schema.registry.url: http://schemaregistry.usm.svc.cluster.local:8081
+    value.converter.value.schema.id.serializer: io.confluent.kafka.serializers.schema.id.HeaderSchemaIdSerializer
 ---
 # users -> S3 (credentials via EKS Pod Identity, no keys in config)
 apiVersion: platform.confluent.io/v1beta1

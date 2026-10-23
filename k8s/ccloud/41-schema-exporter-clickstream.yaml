@@ -1,0 +1,24 @@
+# Schema Linking for the header-ID pipeline (clickstream), kept apart from the
+# classic one (40-schema-exporter.yaml). contextType AUTO puts clickstream-value
+# in its own context in the Confluent Cloud SR: consumers resolve the schema by
+# the GUID in the record header, which works across contexts and doesn't need
+# matching integer IDs. See docs/schema-id-in-headers.md.
+apiVersion: platform.confluent.io/v1beta1
+kind: SchemaExporter
+metadata:
+  name: cp-to-cloud-clickstream
+  namespace: usm
+spec:
+  sourceCluster:
+    schemaRegistryClusterRef:
+      name: schemaregistry
+  destinationCluster:
+    schemaRegistryRest:
+      endpoint: ${CCLOUD_SR_URL}
+      authentication:
+        type: basic
+        basic:
+          secretRef: ccloud-sr-credential
+  subjects:
+    - clickstream-value
+  contextType: AUTO

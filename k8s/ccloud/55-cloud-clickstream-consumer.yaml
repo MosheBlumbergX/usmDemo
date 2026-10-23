@@ -1,0 +1,47 @@
+# Reads the mirrored clickstream topic from Confluent Cloud. Its records carry
+# the schema GUID in the __value_schema_id header (no payload prefix); the
+# deserializer resolves it in the Confluent Cloud SR, where the schema sits in
+# its own context (41-schema-exporter-clickstream.yaml). No IMPORT-mode ID
+# alignment involved. `kubectl -n usm logs deploy/ccloud-clickstream-consumer`
+# shows decoded clicks.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ccloud-clickstream-consumer
+  namespace: usm
+  labels: { app: ccloud-clickstream-consumer }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ccloud-clickstream-consumer }
+  template:
+    metadata:
+      labels: { app: ccloud-clickstream-consumer }
+    spec:
+      containers:
+        - name: consumer
+          image: confluentinc/cp-schema-registry:8.3.0
+          envFrom:
+            - secretRef:
+                name: ccloud-client # BOOTSTRAP / API_KEY / API_SECRET / SR_URL / SR_API_KEY / SR_API_SECRET
+          env:
+            - { name: SCHEMA_REGISTRY_HEAP_OPTS, value: "-Xmx256m" }
+          command: ["bash", "-c"]
+          args:
+            - |
+              cat > /tmp/client.properties <<EOF
+              security.protocol=SASL_SSL
+              sasl.mechanism=PLAIN
+              sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${API_KEY}" password="${API_SECRET}";
+              EOF
+              # Print one decoded record every ~10s instead of flooding the log.
+              exec kafka-avro-console-consumer --bootstrap-server "$BOOTSTRAP" \
+                --topic clickstream --group ccloud-clickstream-consumer \
+                --consumer.config /tmp/client.properties \
+                --property schema.registry.url="$SR_URL" \
+                --property basic.auth.credentials.source=USER_INFO \
+                --property basic.auth.user.info="${SR_API_KEY}:${SR_API_SECRET}" \
+                | { n=0; while IFS= read -r line; do (( n++ % 50 == 0 )) && echo "$line"; done; }
+          resources:
+            requests: { cpu: 50m, memory: 384Mi }
+            limits: { cpu: 500m, memory: 768Mi }

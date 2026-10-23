@@ -22,15 +22,17 @@ for the platform, and a few shell scripts to glue them together.
  │   Kafka x3 ───────────┼─ telemetry/metadata ─► USM Agent ─────┼─┐      │  Kafka Streams view           │
  │   Connect x2 ─────────┘                                       │ │      │                               │
  │     ├ datagen-users     → users                               │ ├VPCE─►│  Enterprise cluster           │
- │     ├ datagen-pageviews → pageviews (Avro, CP SR)             │ │(Priv-│   ├ users, pageviews (mirrors)│
- │     └ s3-sink-users     users → S3 ──► S3 bucket (Pod Ident.) │ │ Link)│   ├ orders ◄─ managed Datagen │
+ │     ├ datagen-pageviews → pageviews (Avro, CP SR)             │ │(Priv-│   ├ users, pageviews,         │
+ │     ├ datagen-clickstream → clickstream (Avro, GUID hdr)      │ │ Link)│   │ clickstream (mirrors)     │
+ │     └ s3-sink-users     users → S3 ──► S3 bucket (Pod Ident.) │ │      │   ├ orders ◄─ managed Datagen │
  │   Kafka ── cluster link cp-to-cloud (source-initiated) ───────┼─┤      │   └ consumer groups           │
  │   Schema Registry (CP)                                        │ │      │     ccloud-demo-consumer      │
  │   ks-validate (Kafka Streams WordCount) + feeder              │ │      └───────────────────────────────┘
  │   persistent-consumer (SASL) on users                         │ │
- │   Schema Registry ── schema exporter cp-to-cloud ─► CCloud SR ┼─┤
+ │   Schema Registry ── schema exporters ────────────► CCloud SR ┼─┤
  │   ccloud-consumer ── reads users + orders from CCloud ────────┼─┤
- │   ccloud-avro-consumer ── decodes pageviews via CCloud SR ────┼─┘
+ │   ccloud-avro-consumer ── decodes pageviews via CCloud SR ────┼─┤
+ │   ccloud-clickstream-consumer ── clickstream via GUID ────────┼─┘
  │  ns flink (optional): CMF + Flink, drop-gender SQL job        │
  └──────────────────────────────────────────────────────────────┘
 ```
@@ -44,11 +46,11 @@ for the platform, and a few shell scripts to glue them together.
 | **Confluent Cloud** (Terraform) | Environment with **Advanced** Stream Governance, USM service account with `UsmAgent` + `DataSteward` roles, Cloud resource management API key for the agent |
 | **CCloud cluster** (Terraform) | **Enterprise** Kafka cluster (private, behind the same access point), `cloud-app` service account + Kafka and Schema Registry API keys (`DataSteward` for Schema Linking) |
 | **CFK** (`k8s/cfk`) | KRaftController ×3, Kafka ×3 (`cp-server:8.3.0`), Connect ×2, Schema Registry, **USMAgent**, KafkaTopics, **Control Center** (next-gen 2.6, with its Prometheus + Alertmanager) |
-| **Connectors** (`k8s/connectors`) | `Connector` CRs: Datagen *users* (JSON), Datagen *pageviews* (Avro), S3 sink |
+| **Connectors** (`k8s/connectors`) | `Connector` CRs: Datagen *users* (JSON), Datagen *pageviews* (Avro), Datagen *clickstream* (Avro, schema ID in record headers), S3 sink |
 | **Apps** (`k8s/apps`) | `ks-validate` stateful Kafka Streams app + feeder, SASL persistent consumer |
 | **Flink** (optional, `k8s/flink`) | Flink operator + CMF (Helm), CFK `FlinkEnvironment`, `drop-gender` SQL statement |
 | **USM registration** (`scripts/register-usm.sh`) | Registers the CP Kafka and Connect clusters through the USM REST API |
-| **Hybrid** (`k8s/ccloud`, `scripts/deploy-ccloud.sh`) | CFK `KafkaRestClass`es, source-initiated `ClusterLink` pair mirroring `users`/`pageviews` into CCloud, CFK-managed cloud topic `orders`, **Schema Linking** (`SchemaExporter` CP SR → CCloud SR), fully-managed **Datagen** connector → `orders`, `ccloud-consumer` + `ccloud-avro-consumer` on EKS |
+| **Hybrid** (`k8s/ccloud`, `scripts/deploy-ccloud.sh`) | CFK `KafkaRestClass`es, source-initiated `ClusterLink` pair mirroring `users`/`pageviews`/`clickstream` into CCloud, CFK-managed cloud topic `orders`, **Schema Linking** (`SchemaExporter`s CP SR → CCloud SR: `pageviews-value` classic, `clickstream-value` in its own context), fully-managed **Datagen** connector → `orders`, `ccloud-consumer` + `ccloud-avro-consumer` + `ccloud-clickstream-consumer` on EKS |
 
 ## Prerequisites
 
@@ -99,14 +101,14 @@ or `.env`:
 1. **Confluent Cloud → Environments → `usm-demo`** - the CP cluster appears next
    to cloud clusters, with broker/partition/throughput metrics.
 2. **Topics** - `users` … `streams-wordcount-output` with live throughput.
-3. **Connectors** - `datagen-users`, `datagen-pageviews`, `s3-sink-users`
+3. **Connectors** - `datagen-users`, `datagen-pageviews`, `datagen-clickstream`, `s3-sink-users`
    running on the *self-managed* Connect cluster, with task status and throughput.
    Check the S3 bucket (`terraform -chdir=terraform output s3_sink_bucket`) for files.
 4. **Consumer groups / lag** - `users-persistent-consumer`, `connect-s3-sink-users`, `ks-validate`.
 5. **Kafka Streams** - `ks-validate` with thread/state, RocksDB, e2e latency and
    processor metrics.
 6. **Hybrid** - open the `usm-demo-cloud` Enterprise cluster in the same
-   environment: `users`/`pageviews` are **mirror topics** fed from the CP cluster by
+   environment: `users`/`pageviews`/`clickstream` are **mirror topics** fed from the CP cluster by
    the `cp-to-cloud` cluster link, `orders` is produced by a fully-managed Datagen
    connector, and `ccloud-demo-consumer` (running on EKS) consumes both - one
    pane of glass for self-managed and cloud.
@@ -114,6 +116,13 @@ or `.env`:
    shows up in IMPORT (read-only) mode with the **same schema ID** as in the CP
    Schema Registry, so the mirrored Avro `pageviews` messages decode with the Cloud SR
    (`kubectl -n usm logs deploy/ccloud-avro-consumer`).
+8. **Schema IDs in headers** - `clickstream` is a separate pipeline whose records
+   carry the schema GUID in the `__value_schema_id` header (no payload prefix).
+   Its schema is exported with `contextType: AUTO`, so in the Cloud SR it sits in
+   its own context and has no matching integer ID, yet
+   `kubectl -n usm logs deploy/ccloud-clickstream-consumer` decodes it: the GUID
+   resolves across contexts and registries. Background and tests:
+   [docs/schema-id-in-headers.md](docs/schema-id-in-headers.md).
 
 > The Enterprise cluster is private-only. Without `make console` the Cloud
 > Console can't reach its endpoints: mirror topics show as plain topics (no
@@ -226,6 +235,9 @@ Leave off `--group` for ad-hoc reads so you don't disturb the demo consumer grou
   default `AUTO` would put them in a `.lsrc-…` context instead), and the exporter
   sets them to IMPORT mode so the IDs are preserved. The CP SR needs
   `enableSchemaExporter: true` plus a `passwordEncoder` for the stored credentials.
+  With schema IDs in record headers (GUIDs) instead of the payload prefix,
+  neither `NONE` nor matching IDs are needed: see
+  [docs/schema-id-in-headers.md](docs/schema-id-in-headers.md).
 - **Only ship the CA you need to the link.** The link's TLS truststore is stored
   in the link config (max 32 KB), so a full CA bundle is rejected. CCloud chains
   to Let's Encrypt, so the script ships just the ISRG roots.
@@ -305,7 +317,8 @@ terraform/         AWS (VPC, EKS, S3, PrivateLink, Route53) + Confluent Cloud (e
 k8s/cfk/           CFK CRs: KRaft, Kafka, Schema Registry, Connect, USMAgent, topics, Control Center
 k8s/connectors/    CFK Connector CRs (Datagen x2, S3 sink)
 k8s/apps/          Kafka Streams demo + SASL consumer
-k8s/ccloud/        CCloud REST classes, cloud topic, source-initiated cluster link, schema exporter, cloud consumers, console proxy
+k8s/ccloud/        CCloud REST classes, cloud topic, source-initiated cluster link, schema exporters, cloud consumers, console proxy
 k8s/flink/         Optional CMF/Flink resources and the drop-gender SQL
-scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, console.sh, c3.sh, flink.sh, status.sh, down.sh
+docs/              Write-ups (schema IDs in Kafka headers across Cluster/Schema Linking)
+scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, console.sh (+ console-proxy-local.sh), c3.sh, flink.sh, status.sh, down.sh
 ```

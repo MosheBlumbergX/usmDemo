@@ -20,3 +20,4 @@ spec:
   mirrorTopics:
     - name: users       # JSON
     - name: pageviews   # Avro; schema IDs refer to the CP Schema Registry
+    - name: clickstream # Avro; schema GUID in a record header

@@ -24,9 +24,10 @@ fi
 if kubectl get ns "$NS" >/dev/null 2>&1; then
   log "deleting Confluent Cloud workloads (console proxy, consumers, schema exporter, cluster link, cloud topic)"
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/60-console-proxy.yaml" --ignore-not-found || true
+  kubectl delete -f "$REPO_ROOT/k8s/ccloud/55-cloud-clickstream-consumer.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/50-cloud-avro-consumer.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/30-cloud-consumer.yaml" --ignore-not-found || true
-  kubectl -n "$NS" delete schemaexporter cp-to-cloud --ignore-not-found || true
+  kubectl -n "$NS" delete schemaexporter cp-to-cloud cp-to-cloud-clickstream --ignore-not-found || true
   # Source side first, then destination side.
   kubectl -n "$NS" delete clusterlink cp-to-cloud-source --ignore-not-found || true
   kubectl -n "$NS" delete clusterlink cp-to-cloud-dest --ignore-not-found || true
