@@ -58,6 +58,37 @@ apply_secret() {
   kubectl -n "$NS" create secret generic "$name" "$@" --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f -
 }
 
+# Background kubectl port-forward that restarts if it drops (pod restart,
+# network blip). Runs in its own process group; .<name>.pid holds the group
+# leader so pf_stop kills the lot. Log in .<name>.log. No-op if already running.
+pf_start() { # name target local:remote [namespace]
+  local name=$1 target=$2 ports=$3 ns=${4:-$NS}
+  local pidfile="$REPO_ROOT/.$name.pid" logfile="$REPO_ROOT/.$name.log"
+  if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then return 0; fi
+  log "starting port-forward localhost:${ports%%:*} -> $target (log: $logfile)"
+  set -m
+  nohup bash -c "while true; do
+    kubectl -n $ns port-forward --address 127.0.0.1 $target $ports
+    sleep 2
+  done" >"$logfile" 2>&1 &
+  echo $! >"$pidfile"
+  set +m
+  local rc
+  for _ in {1..15}; do # wait until the port accepts connections (curl 7 = refused)
+    rc=0; curl -s -m 1 "http://127.0.0.1:${ports%%:*}" >/dev/null 2>&1 || rc=$?
+    ((rc != 7)) && break
+    sleep 1
+  done
+}
+
+pf_stop() { # name
+  local pidfile="$REPO_ROOT/.$1.pid"
+  if [[ -f "$pidfile" ]]; then
+    kill -- "-$(cat "$pidfile")" 2>/dev/null || true
+    rm -f "$pidfile"
+  fi
+}
+
 wait_for() { # kind name [timeout] [expected] [jsonpath]
   local kind=$1 name=$2 timeout=${3:-900} want=${4:-RUNNING} path=${5:-'{.status.phase}'}
   log "waiting for $kind/$name to be $want (timeout ${timeout}s)"

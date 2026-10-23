@@ -28,6 +28,10 @@ tfplan
 
 # --- Kubernetes / local tooling -------------------------------------------
 .kubeconfig
+.console-proxy.pid
+.console-proxy.log
+.c3.pid
+.c3.log
 kubeconfig*
 confluent-for-kubernetes/
 *.tgz

@@ -1,0 +1,37 @@
+# Control Center (next-gen, 2.x) for the CP cluster, with its bundled
+# Prometheus (9090) and Alertmanager (9093). Kafka and KRaft push metrics to
+# the Prometheus via dependencies.metricsClient (k8s/cfk/10-kraft-kafka.yaml),
+# alongside the USM Agent exporter. Reach the UI with `make c3`
+# (port-forward to http://localhost:9021). No license: 30-day trial.
+apiVersion: platform.confluent.io/v1beta1
+kind: ControlCenter
+metadata:
+  name: controlcenter
+  namespace: usm
+spec:
+  replicas: 1
+  image:
+    application: confluentinc/cp-enterprise-control-center-next-gen:2.6.1
+    init: confluentinc/confluent-init-container:3.3.1
+  dataVolumeCapacity: 10Gi
+  storageClass:
+    name: gp3
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka.usm.svc.cluster.local:9071
+    schemaRegistry:
+      url: http://schemaregistry.usm.svc.cluster.local:8081
+    connect:
+      - name: connect
+        url: http://connect.usm.svc.cluster.local:8083
+    prometheusClient:
+      url: http://controlcenter.usm.svc.cluster.local:9090
+    alertManagerClient:
+      url: http://controlcenter.usm.svc.cluster.local:9093
+  services:
+    prometheus:
+      image: confluentinc/cp-enterprise-prometheus:2.6.1
+      pvc:
+        dataVolumeCapacity: 10Gi
+    alertmanager:
+      image: confluentinc/cp-enterprise-alertmanager:2.6.1

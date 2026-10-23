@@ -1,4 +1,4 @@
-# Reads the mirrored Avro topic test2 from Confluent Cloud and deserializes it
+# Reads the mirrored Avro topic pageviews from Confluent Cloud and deserializes it
 # with the Confluent Cloud Schema Registry - only works because Schema Linking
 # copied the schema with its original ID. `kubectl -n usm logs deploy/ccloud-avro-consumer`
 # shows decoded pageviews.
@@ -34,7 +34,7 @@ spec:
               EOF
               # Print one decoded record every ~10s instead of flooding the log.
               exec kafka-avro-console-consumer --bootstrap-server "$BOOTSTRAP" \
-                --topic test2 --group ccloud-avro-consumer \
+                --topic pageviews --group ccloud-avro-consumer \
                 --consumer.config /tmp/client.properties \
                 --property schema.registry.url="$SR_URL" \
                 --property basic.auth.credentials.source=USER_INFO \

@@ -3,6 +3,10 @@
 # -> Terraform (EKS, VPC, PrivateLink, CCloud environment).
 source "$(dirname "$0")/lib.sh"
 
+# Laptop side of make console: port-forward, /etc/hosts, pf (sudo if set up).
+"$REPO_ROOT/scripts/console.sh" stop || warn "console cleanup failed; run make console-stop"
+"$REPO_ROOT/scripts/c3.sh" stop || true
+
 if ENV_ID="$(tf_out ccloud_environment_id 2>/dev/null)" && [[ -n "$ENV_ID" ]]; then
   if LKC="$(tf_out ccloud_cluster_id 2>/dev/null)"; then
     log "deleting managed connector datagen-orders"
@@ -18,7 +22,8 @@ if ENV_ID="$(tf_out ccloud_environment_id 2>/dev/null)" && [[ -n "$ENV_ID" ]]; t
 fi
 
 if kubectl get ns "$NS" >/dev/null 2>&1; then
-  log "deleting Confluent Cloud workloads (consumers, schema exporter, cluster link, cloud topic)"
+  log "deleting Confluent Cloud workloads (console proxy, consumers, schema exporter, cluster link, cloud topic)"
+  kubectl delete -f "$REPO_ROOT/k8s/ccloud/60-console-proxy.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/50-cloud-avro-consumer.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/30-cloud-consumer.yaml" --ignore-not-found || true
   kubectl -n "$NS" delete schemaexporter cp-to-cloud --ignore-not-found || true
@@ -31,6 +36,9 @@ if kubectl get ns "$NS" >/dev/null 2>&1; then
   log "deleting Confluent Platform"
   if kubectl get ns flink >/dev/null 2>&1; then
     kubectl -n flink delete flinkdeployment --all --ignore-not-found || true
+    # FlinkEnvironment first: its finalizer reaches CMF through the CMFRestClass,
+    # so deleting both at once (kubectl delete -f) hangs forever.
+    kubectl -n flink delete flinkenvironment --all --ignore-not-found --timeout=120s || true
     kubectl delete -f "$REPO_ROOT/k8s/flink/cfk-flink.yaml" --ignore-not-found || true
     helm -n flink uninstall cmf cp-flink-kubernetes-operator 2>/dev/null || true
     kubectl -n flink delete pvc --all --wait=true || true

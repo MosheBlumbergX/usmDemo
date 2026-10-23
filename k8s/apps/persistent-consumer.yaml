@@ -1,4 +1,4 @@
-# Long-running SASL/PLAIN consumer on test1 (shows up as a consumer group with lag
+# Long-running SASL/PLAIN consumer on users (shows up as a consumer group with lag
 # in USM). Credentials come from the kafka-client-consumer secret created by
 # scripts/deploy-cp.sh - nothing inline.
 apiVersion: apps/v1
@@ -30,7 +30,7 @@ spec:
               sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${SASL_USERNAME}" password="${SASL_PASSWORD}";
               EOF
               exec kafka-console-consumer --bootstrap-server kafka.usm.svc.cluster.local:9093 \
-                --topic test1 --group test1-persistent-consumer --from-beginning \
+                --topic users --group users-persistent-consumer --from-beginning \
                 --consumer.config /tmp/consumer.properties > /dev/null
           resources:
             requests: { cpu: 50m, memory: 256Mi }

@@ -3,7 +3,7 @@
 #
 # ${S3_BUCKET} and ${AWS_REGION} are substituted by scripts/deploy-cp.sh.
 
-# users (JSON, no schema) -> test1. The optional Flink job reads this topic.
+# JSON users (no schema) -> users. The optional Flink job reads this topic.
 apiVersion: platform.confluent.io/v1beta1
 kind: Connector
 metadata:
@@ -15,7 +15,7 @@ spec:
   connectClusterRef:
     name: connect
   configs:
-    kafka.topic: test1
+    kafka.topic: users
     quickstart: users
     max.interval: "500"
     iterations: "-1"
@@ -23,7 +23,7 @@ spec:
     value.converter: org.apache.kafka.connect.json.JsonConverter
     value.converter.schemas.enable: "false"
 ---
-# pageviews (Avro, schema in CP Schema Registry) -> test2
+# Avro pageviews (schema in CP Schema Registry) -> pageviews
 apiVersion: platform.confluent.io/v1beta1
 kind: Connector
 metadata:
@@ -35,7 +35,7 @@ spec:
   connectClusterRef:
     name: connect
   configs:
-    kafka.topic: test2
+    kafka.topic: pageviews
     quickstart: pageviews
     max.interval: "200"
     iterations: "-1"
@@ -43,7 +43,7 @@ spec:
     value.converter: io.confluent.connect.avro.AvroConverter
     value.converter.schema.registry.url: http://schemaregistry.usm.svc.cluster.local:8081
 ---
-# test1 -> S3 (credentials via EKS Pod Identity, no keys in config)
+# users -> S3 (credentials via EKS Pod Identity, no keys in config)
 apiVersion: platform.confluent.io/v1beta1
 kind: Connector
 metadata:
@@ -55,7 +55,7 @@ spec:
   connectClusterRef:
     name: connect
   configs:
-    topics: test1
+    topics: users
     s3.bucket.name: ${S3_BUCKET}
     s3.region: ${AWS_REGION}
     storage.class: io.confluent.connect.s3.storage.S3Storage

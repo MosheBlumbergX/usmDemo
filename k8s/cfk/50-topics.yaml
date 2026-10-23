@@ -1,37 +1,19 @@
+# JSON users from the datagen-users connector.
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:
-  name: test1
+  name: users
   namespace: usm
 spec:
   kafkaClusterRef: { name: kafka }
   partitionCount: 3
   replicas: 3
 ---
+# Avro pageviews from the datagen-pageviews connector (schema in CP SR).
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:
-  name: test2
-  namespace: usm
-spec:
-  kafkaClusterRef: { name: kafka }
-  partitionCount: 3
-  replicas: 3
----
-apiVersion: platform.confluent.io/v1beta1
-kind: KafkaTopic
-metadata:
-  name: test3
-  namespace: usm
-spec:
-  kafkaClusterRef: { name: kafka }
-  partitionCount: 3
-  replicas: 3
----
-apiVersion: platform.confluent.io/v1beta1
-kind: KafkaTopic
-metadata:
-  name: test4
+  name: pageviews
   namespace: usm
 spec:
   kafkaClusterRef: { name: kafka }
@@ -58,11 +40,11 @@ spec:
   partitionCount: 4
   replicas: 3
 ---
-# Output of the optional Flink "drop-gender" job.
+# Output of the optional Flink "drop-gender" job (users without `gender`).
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:
-  name: flink-test
+  name: users-redacted
   namespace: usm
 spec:
   kafkaClusterRef: { name: kafka }

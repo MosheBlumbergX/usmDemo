@@ -18,5 +18,5 @@ spec:
     clusterID: ${CP_CLUSTER_ID}
     bootstrapEndpoint: placeholder-not-used-for-inbound:9092
   mirrorTopics:
-    - name: test1   # users (JSON)
-    - name: test2   # pageviews (Avro; schema IDs refer to the CP Schema Registry)
+    - name: users       # JSON
+    - name: pageviews   # Avro; schema IDs refer to the CP Schema Registry

@@ -1,0 +1,60 @@
+# TLS-passthrough proxy so the Confluent Cloud Console in a browser outside the
+# VPC can reach the private Enterprise cluster / Schema Registry endpoints.
+# NGINX reads the SNI hostname and forwards the raw TCP stream to that same
+# hostname, which resolves to the PrivateLink endpoint via the VPC's Route53
+# private zone. TLS terminates at Confluent, so no certificates live here.
+# Only reachable through `kubectl port-forward` (no Service), and only forwards
+# to *.aws.accesspoint.glb.confluent.cloud. Deployed by `make ccloud`; the
+# laptop side is `make console` (scripts/console.sh).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: console-proxy
+  namespace: usm
+data:
+  nginx.conf: |
+    worker_processes 1;
+    events {}
+    stream {
+      resolver 169.254.169.253 valid=30s;  # VPC DNS (has the private zone)
+      map $ssl_preread_server_name $upstream {
+        ~\.aws\.accesspoint\.glb\.confluent\.cloud$ $ssl_preread_server_name:443;
+        default                                     127.0.0.1:1;
+      }
+      server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass $upstream;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console-proxy
+  namespace: usm
+  labels: { app: console-proxy }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: console-proxy }
+  template:
+    metadata:
+      labels: { app: console-proxy }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 443
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      volumes:
+        - name: config
+          configMap:
+            name: console-proxy

@@ -21,16 +21,16 @@ for the platform, and a few shell scripts to glue them together.
  │   KRaftController x3 ─┐                                       │        │  USM: CP Kafka / CP Connect   │
  │   Kafka x3 ───────────┼─ telemetry/metadata ─► USM Agent ─────┼─┐      │  Kafka Streams view           │
  │   Connect x2 ─────────┘                                       │ │      │                               │
- │     ├ datagen-users     → test1                               │ ├VPCE─►│  Enterprise cluster           │
- │     ├ datagen-pageviews → test2 (Avro, CP SR)                 │ │(Priv-│   ├ test1, test2  (mirrors)   │
- │     └ s3-sink-users     test1 → S3 ──► S3 bucket (Pod Ident.) │ │ Link)│   ├ orders ◄─ managed Datagen │
+ │     ├ datagen-users     → users                               │ ├VPCE─►│  Enterprise cluster           │
+ │     ├ datagen-pageviews → pageviews (Avro, CP SR)             │ │(Priv-│   ├ users, pageviews (mirrors)│
+ │     └ s3-sink-users     users → S3 ──► S3 bucket (Pod Ident.) │ │ Link)│   ├ orders ◄─ managed Datagen │
  │   Kafka ── cluster link cp-to-cloud (source-initiated) ───────┼─┤      │   └ consumer groups           │
  │   Schema Registry (CP)                                        │ │      │     ccloud-demo-consumer      │
  │   ks-validate (Kafka Streams WordCount) + feeder              │ │      └───────────────────────────────┘
- │   persistent-consumer (SASL) on test1                         │ │
+ │   persistent-consumer (SASL) on users                         │ │
  │   Schema Registry ── schema exporter cp-to-cloud ─► CCloud SR ┼─┤
- │   ccloud-consumer ── reads test1 + orders from CCloud ────────┼─┤
- │   ccloud-avro-consumer ── decodes test2 via CCloud SR ────────┼─┘
+ │   ccloud-consumer ── reads users + orders from CCloud ────────┼─┤
+ │   ccloud-avro-consumer ── decodes pageviews via CCloud SR ────┼─┘
  │  ns flink (optional): CMF + Flink, drop-gender SQL job        │
  └──────────────────────────────────────────────────────────────┘
 ```
@@ -43,12 +43,12 @@ for the platform, and a few shell scripts to glue them together.
 | **PrivateLink** (Terraform) | CCloud ingress PrivateLink **gateway** → AWS interface **VPC endpoint** → CCloud **access point** → Route53 private zone `*.<access-point-domain>` |
 | **Confluent Cloud** (Terraform) | Environment with **Advanced** Stream Governance, USM service account with `UsmAgent` + `DataSteward` roles, Cloud resource management API key for the agent |
 | **CCloud cluster** (Terraform) | **Enterprise** Kafka cluster (private, behind the same access point), `cloud-app` service account + Kafka and Schema Registry API keys (`DataSteward` for Schema Linking) |
-| **CFK** (`k8s/cfk`) | KRaftController ×3, Kafka ×3 (`cp-server:8.3.0`), Connect ×2, Schema Registry, **USMAgent**, KafkaTopics |
+| **CFK** (`k8s/cfk`) | KRaftController ×3, Kafka ×3 (`cp-server:8.3.0`), Connect ×2, Schema Registry, **USMAgent**, KafkaTopics, **Control Center** (next-gen 2.6, with its Prometheus + Alertmanager) |
 | **Connectors** (`k8s/connectors`) | `Connector` CRs: Datagen *users* (JSON), Datagen *pageviews* (Avro), S3 sink |
 | **Apps** (`k8s/apps`) | `ks-validate` stateful Kafka Streams app + feeder, SASL persistent consumer |
 | **Flink** (optional, `k8s/flink`) | Flink operator + CMF (Helm), CFK `FlinkEnvironment`, `drop-gender` SQL statement |
 | **USM registration** (`scripts/register-usm.sh`) | Registers the CP Kafka and Connect clusters through the USM REST API |
-| **Hybrid** (`k8s/ccloud`, `scripts/deploy-ccloud.sh`) | CFK `KafkaRestClass`es, source-initiated `ClusterLink` pair mirroring `test1`/`test2` into CCloud, CFK-managed cloud topic `orders`, **Schema Linking** (`SchemaExporter` CP SR → CCloud SR), fully-managed **Datagen** connector → `orders`, `ccloud-consumer` + `ccloud-avro-consumer` on EKS |
+| **Hybrid** (`k8s/ccloud`, `scripts/deploy-ccloud.sh`) | CFK `KafkaRestClass`es, source-initiated `ClusterLink` pair mirroring `users`/`pageviews` into CCloud, CFK-managed cloud topic `orders`, **Schema Linking** (`SchemaExporter` CP SR → CCloud SR), fully-managed **Datagen** connector → `orders`, `ccloud-consumer` + `ccloud-avro-consumer` on EKS |
 
 ## Prerequisites
 
@@ -61,21 +61,24 @@ for the platform, and a few shell scripts to glue them together.
 
 ```bash
 cp .env.example .env               # add CONFLUENT_CLOUD_API_KEY / _SECRET
-make up                            # ~30 min end-to-end
+make up                            # ~30 min end-to-end, asks for sudo once at the end (for /etc/hosts update)
+                                   # Control Center: http://localhost:9021
 make status
 ```
 
-`make up` runs five steps you can also run individually:
+`make up` runs seven steps you can also run individually:
 
 | Step | Command | What it does |
 |---|---|---|
 | 1 | `make infra` | `terraform apply` + writes a dedicated kubeconfig to `./.kubeconfig` |
-| 2 | `make cp` | Installs CFK, creates secrets from Terraform outputs, deploys CP + USM Agent |
+| 2 | `make cp` | Installs CFK, creates secrets from Terraform outputs, deploys CP + USM Agent + Control Center |
 | 3 | `make register` | Registers the CP Kafka cluster and Connect cluster with USM |
 | 4 | `make workloads` | Deploys the connectors and the Kafka Streams / consumer apps |
-| 5 | `make ccloud` | Cluster link + Schema Linking CP → CCloud, managed Datagen connector, cloud consumers |
+| 5 | `make ccloud` | Cluster link + Schema Linking CP → CCloud, managed Datagen connector, cloud consumers, Console proxy |
+| 6 | `make c3` | Control Center for the CP cluster on `http://localhost:9021` (background port-forward; `make c3-stop`) |
+| 7 | `make console` | Lets the Cloud Console in your browser reach the private cluster (see [Browsing the private cluster](#browsing-the-private-cluster-in-the-cloud-console)) - the only step that asks for sudo, so it runs last |
 
-Optional: `make flink` adds CMF + Flink and the `drop-gender` job (`test1` → `flink-test`).
+Optional: `make flink` adds CMF + Flink and the `drop-gender` job (`users` → `users-redacted`).
 
 To use kubectl against the demo cluster: `export KUBECONFIG=$PWD/.kubeconfig`.
 
@@ -95,23 +98,88 @@ or `.env`:
 
 1. **Confluent Cloud → Environments → `usm-demo`** - the CP cluster appears next
    to cloud clusters, with broker/partition/throughput metrics.
-2. **Topics** - `test1` … `streams-wordcount-output` with live throughput.
+2. **Topics** - `users` … `streams-wordcount-output` with live throughput.
 3. **Connectors** - `datagen-users`, `datagen-pageviews`, `s3-sink-users`
    running on the *self-managed* Connect cluster, with task status and throughput.
    Check the S3 bucket (`terraform -chdir=terraform output s3_sink_bucket`) for files.
-4. **Consumer groups / lag** - `test1-persistent-consumer`, `connect-s3-sink-users`, `ks-validate`.
+4. **Consumer groups / lag** - `users-persistent-consumer`, `connect-s3-sink-users`, `ks-validate`.
 5. **Kafka Streams** - `ks-validate` with thread/state, RocksDB, e2e latency and
    processor metrics.
 6. **Hybrid** - open the `usm-demo-cloud` Enterprise cluster in the same
-   environment: `test1`/`test2` are **mirror topics** fed from the CP cluster by
+   environment: `users`/`pageviews` are **mirror topics** fed from the CP cluster by
    the `cp-to-cloud` cluster link, `orders` is produced by a fully-managed Datagen
    connector, and `ccloud-demo-consumer` (running on EKS) consumes both - one
    pane of glass for self-managed and cloud.
-7. **Schema Linking** - in the environment's **Schema Registry**, `test2-value`
+7. **Schema Linking** - in the environment's **Schema Registry**, `pageviews-value`
    shows up in IMPORT (read-only) mode with the **same schema ID** as in the CP
-   Schema Registry, so the mirrored Avro `test2` messages render decoded in the
-   Cloud message browser. `kubectl -n usm logs deploy/ccloud-avro-consumer`
-   shows the same records decoded through the Cloud SR.
+   Schema Registry, so the mirrored Avro `pageviews` messages decode with the Cloud SR
+   (`kubectl -n usm logs deploy/ccloud-avro-consumer`).
+
+> The Enterprise cluster is private-only. Without `make console` the Cloud
+> Console can't reach its endpoints: mirror topics show as plain topics (no
+> link icon) and the message browser doesn't load. See below.
+
+## Browsing the private cluster in the Cloud Console
+
+The Console loads part of each page (mirror/link state, messages, schemas)
+straight from the cluster's private REST endpoint, so your browser needs a path
+into the VPC. `make console` builds one without exposing anything publicly:
+
+```
+browser ─► /etc/hosts: lkc-…/lsrc-… → 127.0.0.1
+        ─► pf: 127.0.0.1:443 → 127.0.0.1:18443
+        ─► kubectl port-forward ─► console-proxy pod (ns usm)
+        ─► NGINX ssl_preread: SNI host, resolved via the VPC's Route53 private zone
+        ─► PrivateLink ─► Enterprise cluster / Schema Registry
+```
+
+- `console-proxy` (`k8s/ccloud/60-console-proxy.yaml`, deployed by `make ccloud`)
+  passes TLS through untouched: no certificates, Confluent's TLS ends in your
+  browser. It only forwards to `*.aws.accesspoint.glb.confluent.cloud` and has
+  no Service, so it's reachable only via `kubectl port-forward`.
+- The port-forward runs in the background (restarted if it drops), pid/log in
+  `.console-proxy.pid` / `.console-proxy.log`.
+- macOS won't let a normal user bind 443, and kubectl can't run under `sudo`
+  (EKS credentials are in your SSO session), so `scripts/console-proxy-local.sh`
+  adds a pf redirect 443 → 18443 plus the two `/etc/hosts` entries. It runs with
+  `sudo` only when the private endpoint isn't already reachable.
+- `make console` is idempotent: re-run it after a reboot (pf rules don't
+  survive) or when your AWS SSO session was renewed.
+- `make console-stop` stops the forward and removes the hosts entries and pf
+  rule; `make down` does the same.
+
+## Consuming the topics
+
+Everything is private, so consume from pods inside EKS
+(`export KUBECONFIG=$PWD/.kubeconfig` first).
+
+```bash
+# CP: users (JSON users) - any topic works via the internal listener
+kubectl -n usm exec kafka-0 -c kafka -- \
+  kafka-console-consumer --bootstrap-server localhost:9071 --topic users --max-messages 5
+
+# CP: pageviews (Avro pageviews) decoded with the CP Schema Registry
+kubectl -n usm exec schemaregistry-0 -c schemaregistry -- \
+  kafka-avro-console-consumer --bootstrap-server kafka.usm.svc.cluster.local:9071 \
+  --topic pageviews --max-messages 5 --formatter-property schema.registry.url=http://localhost:8081
+
+# Confluent Cloud: orders (managed Datagen) or the users mirror
+kubectl -n usm exec deploy/ccloud-consumer -- bash -c \
+  'kafka-console-consumer --bootstrap-server "$BOOTSTRAP" --command-config /tmp/client.properties \
+   --topic orders --from-beginning --max-messages 5'
+
+# Confluent Cloud: pageviews mirror decoded with the Cloud Schema Registry (Schema Linking)
+kubectl -n usm exec deploy/ccloud-avro-consumer -- bash -c \
+  'kafka-avro-console-consumer --bootstrap-server "$BOOTSTRAP" --command-config /tmp/client.properties \
+   --topic pageviews --max-messages 5 \
+   --formatter-property schema.registry.url="$SR_URL" \
+   --formatter-property basic.auth.credentials.source=USER_INFO \
+   --formatter-property basic.auth.user.info="$SR_API_KEY:$SR_API_SECRET"'
+```
+
+The cloud pods already hold the credentials (`ccloud-client` secret) and a
+`/tmp/client.properties`, so you can reuse them for any other cloud topic.
+Leave off `--group` for ad-hoc reads so you don't disturb the demo consumer groups.
 
 ## How USM is wired (and why)
 
@@ -165,6 +233,12 @@ or `.env`:
   API key against the cluster's REST endpoint, which is private-only here -
   hence `disable_wait_for_ready = true` - and cloud topics/links are managed by
   CFK from inside EKS instead of Terraform.
+- **Control Center next to USM.** C3 next-gen (2.x) ships its own Prometheus
+  and Alertmanager; `dependencies.metricsClient` on Kafka and KRaft makes CFK
+  add a second telemetry exporter (`_c3`, OTLP to C3's Prometheus on 9090) next
+  to the USM one (`_usm`), so both get broker metrics. Adding it to a running
+  cluster rolls the controllers and brokers. Without a license C3 runs as a
+  30-day trial.
 - **Registration via REST.** `confluent usm kafka|connect register` needs an
   interactive login; the script calls the same `/usm/v1` API with the Cloud API key.
 
@@ -181,6 +255,9 @@ or `.env`:
   anything beyond a personal demo use a remote, encrypted backend.
 - The internal listener (9071) is PLAINTEXT and unauthenticated inside the
   cluster - fine for a demo, not for production.
+- `make console` edits `/etc/hosts` and loads a pf rule on your laptop (both
+  tagged/removed by `make console-stop`). The in-cluster proxy has no Service and
+  only forwards to Confluent access-point hostnames.
 
 ## Troubleshooting
 
@@ -199,6 +276,10 @@ kubectl confluent cluster usmagent usm-agent-validz   # needs the CFK kubectl pl
 - **Agent can't reach Confluent Cloud** - check DNS from inside the cluster:
   `kubectl run -it --rm dns --image=busybox -- nslookup <front-door host>`. It should
   resolve to private IPs in the VPC (Route53 private zone → VPC endpoint).
+- **Mirror topics without the link icon / message browser won't load** - the
+  browser can't reach the private cluster. Run `make console` and hard-refresh.
+  If it reports the endpoint unreachable, check `.console-proxy.log` (expired
+  AWS SSO session is the usual cause).
 - **Cluster link `ERROR`** - `kubectl -n usm get clusterlink cp-to-cloud-source -o yaml`
   shows the Admin REST error. Delete the source CR and re-run `make ccloud`.
 - **Pods stuck `Terminating` after a node loss** - `kubectl delete pod --force --grace-period=0`,
@@ -212,7 +293,8 @@ kubectl confluent cluster usmagent usm-agent-validz   # needs the CFK kubectl pl
 make down
 ```
 
-Deletes the managed connector and cluster link, deregisters the USM clusters,
+Stops `make console` (asks for sudo to clean `/etc/hosts`/pf if set up), deletes
+the managed connector and cluster link, deregisters the USM clusters,
 deletes CP resources (so the EBS volumes are released), then runs `terraform destroy`
 (which also removes the Enterprise cluster and the environment).
 
@@ -220,10 +302,10 @@ deletes CP resources (so the EBS volumes are released), then runs `terraform des
 
 ```
 terraform/         AWS (VPC, EKS, S3, PrivateLink, Route53) + Confluent Cloud (env, gateway, access point, SA, keys)
-k8s/cfk/           CFK CRs: KRaft, Kafka, Schema Registry, Connect, USMAgent, topics
+k8s/cfk/           CFK CRs: KRaft, Kafka, Schema Registry, Connect, USMAgent, topics, Control Center
 k8s/connectors/    CFK Connector CRs (Datagen x2, S3 sink)
 k8s/apps/          Kafka Streams demo + SASL consumer
-k8s/ccloud/        CCloud REST classes, cloud topic, source-initiated cluster link, schema exporter, cloud consumers
+k8s/ccloud/        CCloud REST classes, cloud topic, source-initiated cluster link, schema exporter, cloud consumers, console proxy
 k8s/flink/         Optional CMF/Flink resources and the drop-gender SQL
-scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, flink.sh, status.sh, down.sh
+scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, console.sh, c3.sh, flink.sh, status.sh, down.sh
 ```

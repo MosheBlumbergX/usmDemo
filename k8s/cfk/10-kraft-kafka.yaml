@@ -24,6 +24,9 @@ spec:
     usmAgentClient:
       url: http://usm-agent.usm.svc.cluster.local:10000
       clientMetricsEnabled: true
+    # Control Center's Prometheus (k8s/cfk/60-controlcenter.yaml).
+    metricsClient:
+      url: http://controlcenter.usm.svc.cluster.local:9090
 ---
 apiVersion: platform.confluent.io/v1beta1
 kind: Kafka
@@ -65,3 +68,6 @@ spec:
     usmAgentClient:
       url: http://usm-agent.usm.svc.cluster.local:10000
       clientMetricsEnabled: true
+    # Control Center's Prometheus (k8s/cfk/60-controlcenter.yaml).
+    metricsClient:
+      url: http://controlcenter.usm.svc.cluster.local:9090

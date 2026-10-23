@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Step 5: put the Confluent Cloud Enterprise cluster to work.
 #   - CFK KafkaRestClasses + cloud topic `orders`
-#   - source-initiated cluster link CP -> CCloud mirroring test1/test2
-#   - Schema Linking CP SR -> CCloud SR (test2-value, same schema IDs)
+#   - source-initiated cluster link CP -> CCloud mirroring users/pageviews
+#   - Schema Linking CP SR -> CCloud SR (pageviews-value, same schema IDs)
 #   - fully-managed Datagen connector -> orders
 #   - consumer on EKS reading from CCloud over PrivateLink
+#   - console-proxy for browsing the private cluster from a laptop (make console)
 source "$(dirname "$0")/lib.sh"
 require kubectl envsubst jq curl
 
@@ -71,12 +72,15 @@ ccloud_api PUT "/connect/v1/environments/$ENV_ID/clusters/$CCLOUD_CLUSTER_ID/con
   }')" | jq -c '{name, type: .type}'
 
 # The consumer subscribes by regex; start it once the mirror topic exists so it
-# doesn't wait for the next metadata refresh (5 min) to pick test1 up.
-wait_for clusterlink cp-to-cloud-dest 300 ACTIVE '{.status.mirrorTopics.test1.status}'
+# doesn't wait for the next metadata refresh (5 min) to pick users up.
+wait_for clusterlink cp-to-cloud-dest 300 ACTIVE '{.status.mirrorTopics.users.status}'
 
 log "consumer on EKS reading from Confluent Cloud"
 kubectl apply -f "$REPO_ROOT/k8s/ccloud/30-cloud-consumer.yaml"
 kubectl apply -f "$REPO_ROOT/k8s/ccloud/50-cloud-avro-consumer.yaml"
+
+log "console-proxy (Cloud Console access from a laptop, see make console)"
+kubectl apply -f "$REPO_ROOT/k8s/ccloud/60-console-proxy.yaml"
 
 kubectl -n "$NS" get clusterlink
 kubectl -n "$NS" get kafkatopic ccloud-orders

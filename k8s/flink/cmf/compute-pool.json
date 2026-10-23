@@ -6,12 +6,12 @@
     "type": "DEDICATED",
     "clusterSpec": {
       "flinkVersion": "v1_19",
-      "image": "confluentinc/cp-flink-sql:1.19-cp8",
+      "image": "confluentinc/cp-flink-sql:1.19-cp12",
       "flinkConfiguration": {
         "pipeline.operator-chaining.enabled": "false",
-        "execution.checkpointing.interval": "10s"
+        "execution.checkpointing.interval": "60s"
       },
-      "taskManager": { "resource": { "cpu": 1.0, "memory": "1024m" } },
+      "taskManager": { "resource": { "cpu": 2.0, "memory": "2048m" } },
       "jobManager": { "resource": { "cpu": 0.5, "memory": "1024m" } }
     }
   }
