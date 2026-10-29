@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help up infra cp register workloads ccloud connect-cloud flink status console console-stop c3 c3-stop down fmt validate
+.PHONY: help up infra cp register workloads ccloud connect-cloud flink slides status console console-stop c3 c3-stop down fmt validate
 
 help: ## Show targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ c3-stop: ## Stop the Control Center port-forward
 
 flink: ## (optional) CMF + Flink operator + drop-gender SQL job
 	./scripts/flink.sh
+
+slides: ## Intro slides (Slidev) on http://localhost:3030
+	cd slides && { [ -d node_modules ] || npm install; } && npx slidev --port 3030 --open
 
 status: ## Show CP + USM status
 	./scripts/status.sh

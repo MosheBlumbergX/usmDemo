@@ -100,6 +100,17 @@ or `.env`:
 | `node_instance_type`, `node_count` | `m5.xlarge`, `4` | Size for the full footprint incl. Flink |
 | `tags` | `{}` | Extra AWS tags (e.g. your org's mandatory owner/cost tags). Applied to every resource, including EKS nodes and the EBS volumes behind Kafka PVCs |
 
+## Intro slides
+
+A short [Slidev](https://sli.dev) deck in `slides/` explains what the demo shows
+before you open the Cloud Console. Needs Node.js 20+.
+
+```bash
+make slides                        # npm install (first run) + dev server on http://localhost:3030
+                                   # presenter view (notes, timer): http://localhost:3030/presenter
+cd slides && npm run export        # optional: PDF backup (slides-export.pdf)
+```
+
 ## Demo walkthrough
 
 1. **Confluent Cloud → Environments → `usm-demo`** - the CP cluster appears next
@@ -339,6 +350,7 @@ k8s/connectors/    CFK Connector CRs (Datagen x2, S3 sink)
 k8s/apps/          Kafka Streams demo + SASL consumer
 k8s/ccloud/        CCloud REST classes, cloud topics, source-initiated cluster link, schema exporters, cloud consumers, console proxy, Cloud-backed Connect
 k8s/flink/         Optional CMF/Flink resources and the drop-gender SQL
+slides/            Slidev intro deck (make slides)
 docs/              Write-ups (schema IDs in Kafka headers across Cluster/Schema Linking)
 scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, deploy-connect-cloud.sh, console.sh (+ console-proxy-local.sh), c3.sh, flink.sh, status.sh, down.sh
 ```
