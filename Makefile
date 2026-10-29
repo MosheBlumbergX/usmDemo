@@ -1,12 +1,12 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help up infra cp register workloads ccloud flink status console console-stop c3 c3-stop down fmt validate
+.PHONY: help up infra cp register workloads ccloud connect-cloud flink status console console-stop c3 c3-stop down fmt validate
 
 help: ## Show targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
-up: infra cp register workloads ccloud c3 console ## Full deploy: infra -> CP -> USM registration -> connectors/apps -> cloud cluster link -> C3 + Console access (sudo last)
+up: infra cp register workloads ccloud connect-cloud c3 console ## Full deploy: infra -> CP -> USM registration -> connectors/apps -> cloud cluster link -> Cloud-backed Connect -> C3 + Console access (sudo last)
 
 infra: ## Terraform: VPC, EKS, S3, PrivateLink, CCloud env + USM service account
 	./scripts/infra.sh
@@ -22,6 +22,9 @@ workloads: ## Connectors (Datagen, S3 sink) + Kafka Streams / consumer apps
 
 ccloud: ## Cluster link CP -> CCloud Enterprise, managed Datagen, cloud consumer
 	./scripts/deploy-ccloud.sh
+
+connect-cloud: ## Self-managed Connect on EKS backed by the CCloud cluster, registered with USM
+	./scripts/deploy-connect-cloud.sh
 
 console: ## Let the CCloud Console in this laptop's browser reach the private cluster (sudo once)
 	./scripts/console.sh

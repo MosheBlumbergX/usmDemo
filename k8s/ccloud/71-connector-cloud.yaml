@@ -1,0 +1,21 @@
+# Connector on the Cloud-backed Connect cluster: JSON stock trades -> stock-trades
+# in Confluent Cloud. Applied only after connect-cloud is registered with USM
+# (same ordering rule as the CP connectors).
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: datagen-stock-trades
+  namespace: usm
+spec:
+  class: io.confluent.kafka.connect.datagen.DatagenConnector
+  taskMax: 1
+  connectClusterRef:
+    name: connect-cloud
+  configs:
+    kafka.topic: stock-trades
+    quickstart: stock_trades
+    max.interval: "500"
+    iterations: "-1"
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter.schemas.enable: "false"

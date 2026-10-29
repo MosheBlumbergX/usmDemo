@@ -32,6 +32,7 @@ tfplan
 .console-proxy.log
 .c3.pid
 .c3.log
+.make-up.log
 kubeconfig*
 confluent-for-kubernetes/
 *.tgz

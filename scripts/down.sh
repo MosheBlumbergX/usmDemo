@@ -22,7 +22,9 @@ if ENV_ID="$(tf_out ccloud_environment_id 2>/dev/null)" && [[ -n "$ENV_ID" ]]; t
 fi
 
 if kubectl get ns "$NS" >/dev/null 2>&1; then
-  log "deleting Confluent Cloud workloads (console proxy, consumers, schema exporter, cluster link, cloud topic)"
+  log "deleting Confluent Cloud workloads (Cloud-backed Connect, console proxy, consumers, schema exporter, cluster link, cloud topics)"
+  kubectl delete -f "$REPO_ROOT/k8s/ccloud/71-connector-cloud.yaml" --ignore-not-found || true
+  kubectl delete -f "$REPO_ROOT/k8s/ccloud/70-connect-cloud.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/60-console-proxy.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/55-cloud-clickstream-consumer.yaml" --ignore-not-found || true
   kubectl delete -f "$REPO_ROOT/k8s/ccloud/50-cloud-avro-consumer.yaml" --ignore-not-found || true

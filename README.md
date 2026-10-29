@@ -20,19 +20,21 @@ for the platform, and a few shell scripts to glue them together.
  │  ns usm:                                                      │        │                               │
  │   KRaftController x3 ─┐                                       │        │  USM: CP Kafka / CP Connect   │
  │   Kafka x3 ───────────┼─ telemetry/metadata ─► USM Agent ─────┼─┐      │  Kafka Streams view           │
- │   Connect x2 ─────────┘                                       │ │      │                               │
+ │   Connect x2 ─────────┤                                       │ │      │  Cloud-backed Connect         │
+ │   connect-cloud ──────┘                                       │ │      │                               │
  │     ├ datagen-users     → users                               │ ├VPCE─►│  Enterprise cluster           │
  │     ├ datagen-pageviews → pageviews (Avro, CP SR)             │ │(Priv-│   ├ users, pageviews,         │
  │     ├ datagen-clickstream → clickstream (Avro, GUID hdr)      │ │ Link)│   │ clickstream (mirrors)     │
  │     └ s3-sink-users     users → S3 ──► S3 bucket (Pod Ident.) │ │      │   ├ orders ◄─ managed Datagen │
- │   Kafka ── cluster link cp-to-cloud (source-initiated) ───────┼─┤      │   └ consumer groups           │
- │   Schema Registry (CP)                                        │ │      │     ccloud-demo-consumer      │
- │   ks-validate (Kafka Streams WordCount) + feeder              │ │      └───────────────────────────────┘
- │   persistent-consumer (SASL) on users                         │ │
- │   Schema Registry ── schema exporters ────────────► CCloud SR ┼─┤
+ │   Kafka ── cluster link cp-to-cloud (source-initiated) ───────┼─┤      │   ├ stock-trades ◄─ EKS       │
+ │   Schema Registry (CP)                                        │ │      │   │ connect-cloud             │
+ │   ks-validate (Kafka Streams WordCount) + feeder              │ │      │   └ consumer groups           │
+ │   persistent-consumer (SASL) on users                         │ │      │     ccloud-demo-consumer      │
+ │   Schema Registry ── schema exporters ────────────► CCloud SR ┼─┤      └───────────────────────────────┘
  │   ccloud-consumer ── reads users + orders from CCloud ────────┼─┤
  │   ccloud-avro-consumer ── decodes pageviews via CCloud SR ────┼─┤
- │   ccloud-clickstream-consumer ── clickstream via GUID ────────┼─┘
+ │   ccloud-clickstream-consumer ── clickstream via GUID ────────┼─┤
+ │   connect-cloud (Kafka = CCloud) ── datagen-stock-trades ─────┼─┘
  │  ns flink (optional): CMF + Flink, drop-gender SQL job        │
  └──────────────────────────────────────────────────────────────┘
 ```
@@ -51,6 +53,7 @@ for the platform, and a few shell scripts to glue them together.
 | **Flink** (optional, `k8s/flink`) | Flink operator + CMF (Helm), CFK `FlinkEnvironment`, `drop-gender` SQL statement |
 | **USM registration** (`scripts/register-usm.sh`) | Registers the CP Kafka and Connect clusters through the USM REST API |
 | **Hybrid** (`k8s/ccloud`, `scripts/deploy-ccloud.sh`) | CFK `KafkaRestClass`es, source-initiated `ClusterLink` pair mirroring `users`/`pageviews`/`clickstream` into CCloud, CFK-managed cloud topic `orders`, **Schema Linking** (`SchemaExporter`s CP SR → CCloud SR: `pageviews-value` classic, `clickstream-value` in its own context), fully-managed **Datagen** connector → `orders`, `ccloud-consumer` + `ccloud-avro-consumer` + `ccloud-clickstream-consumer` on EKS |
+| **Cloud-backed Connect** (`k8s/ccloud/7*`, `scripts/deploy-connect-cloud.sh`) | Self-managed CFK `Connect` cluster `connect-cloud` on EKS whose Kafka is the Enterprise cluster, registered with USM against the `lkc-`, Datagen connector → cloud topic `stock-trades` |
 
 ## Prerequisites
 
@@ -68,7 +71,7 @@ make up                            # ~30 min end-to-end, asks for sudo once at t
 make status
 ```
 
-`make up` runs seven steps you can also run individually:
+`make up` runs eight steps you can also run individually:
 
 | Step | Command | What it does |
 |---|---|---|
@@ -77,8 +80,9 @@ make status
 | 3 | `make register` | Registers the CP Kafka cluster and Connect cluster with USM |
 | 4 | `make workloads` | Deploys the connectors and the Kafka Streams / consumer apps |
 | 5 | `make ccloud` | Cluster link + Schema Linking CP → CCloud, managed Datagen connector, cloud consumers, Console proxy |
-| 6 | `make c3` | Control Center for the CP cluster on `http://localhost:9021` (background port-forward; `make c3-stop`) |
-| 7 | `make console` | Lets the Cloud Console in your browser reach the private cluster (see [Browsing the private cluster](#browsing-the-private-cluster-in-the-cloud-console)) - the only step that asks for sudo, so it runs last |
+| 6 | `make connect-cloud` | Self-managed Connect on EKS bootstrapping the CCloud cluster, registered with USM, plus its Datagen connector |
+| 7 | `make c3` | Control Center for the CP cluster on `http://localhost:9021` (background port-forward; `make c3-stop`) |
+| 8 | `make console` | Lets the Cloud Console in your browser reach the private cluster (see [Browsing the private cluster](#browsing-the-private-cluster-in-the-cloud-console)) - the only step that asks for sudo, so it runs last |
 
 Optional: `make flink` adds CMF + Flink and the `drop-gender` job (`users` → `users-redacted`).
 
@@ -123,6 +127,13 @@ or `.env`:
    `kubectl -n usm logs deploy/ccloud-clickstream-consumer` decodes it: the GUID
    resolves across contexts and registries. Background and tests:
    [docs/schema-id-in-headers.md](docs/schema-id-in-headers.md).
+9. **Self-managed Connect on Confluent Cloud Kafka** - **Connectors → Self-managed**
+   also lists `datagen-stock-trades`, running on `connect-cloud`: a Connect
+   cluster on EKS whose bootstrap is the Enterprise cluster, not CP. It is
+   registered with USM against the `lkc-` and reports through the same USM Agent,
+   so you get the same status, task and throughput view. Its data lands in the
+   cloud topic `stock-trades`, and its internal topics (`usm.connect-cloud-*`)
+   live in Confluent Cloud too.
 
 > The Enterprise cluster is private-only. Without `make console` the Cloud
 > Console can't reach its endpoints: mirror topics show as plain topics (no
@@ -217,6 +228,15 @@ Leave off `--group` for ad-hoc reads so you don't disturb the demo consumer grou
   are rejected with `USM resource not found (Connector)`. That's why `make workloads`
   runs after `make register` (fix for an existing setup: delete and re-apply the
   `Connector` CRs).
+- **Connect on Confluent Cloud Kafka works the same way.** A Connect cluster
+  whose `bootstrap.servers` is a Confluent Cloud cluster is registered with
+  `kafka_cluster_id` = the `lkc-` instead of the CP cluster ID, and still sends
+  metadata and metrics to the USM Agent (CFK wires that from
+  `dependencies.usmAgentClient`, nothing else to set). TLS to the cloud brokers
+  uses `ignoreTrustStoreConfig: true`, since Confluent Cloud certificates chain
+  to a public CA. At startup it logs a few `Unable to submit events without
+  credentials` errors from Confluent's default telemetry exporter
+  (`collector.telemetry.confluent.cloud`), which is unrelated to USM and harmless.
 - **Don't name the CCloud credential secret `<agent-name>-ccloud-credential`.**
   CFK generates a secret with exactly that name for the agent's Envoy config and
   will overwrite yours (the CR then fails with `required key [basic.txt] missing`).
@@ -317,8 +337,8 @@ terraform/         AWS (VPC, EKS, S3, PrivateLink, Route53) + Confluent Cloud (e
 k8s/cfk/           CFK CRs: KRaft, Kafka, Schema Registry, Connect, USMAgent, topics, Control Center
 k8s/connectors/    CFK Connector CRs (Datagen x2, S3 sink)
 k8s/apps/          Kafka Streams demo + SASL consumer
-k8s/ccloud/        CCloud REST classes, cloud topic, source-initiated cluster link, schema exporters, cloud consumers, console proxy
+k8s/ccloud/        CCloud REST classes, cloud topics, source-initiated cluster link, schema exporters, cloud consumers, console proxy, Cloud-backed Connect
 k8s/flink/         Optional CMF/Flink resources and the drop-gender SQL
 docs/              Write-ups (schema IDs in Kafka headers across Cluster/Schema Linking)
-scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, console.sh (+ console-proxy-local.sh), c3.sh, flink.sh, status.sh, down.sh
+scripts/           infra.sh, deploy-cp.sh, register-usm.sh, deploy-workloads.sh, deploy-ccloud.sh, deploy-connect-cloud.sh, console.sh (+ console-proxy-local.sh), c3.sh, flink.sh, status.sh, down.sh
 ```
