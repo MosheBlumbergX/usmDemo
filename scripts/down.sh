@@ -58,6 +58,11 @@ if kubectl get ns "$NS" >/dev/null 2>&1; then
     kubectl delete -f "$f" --ignore-not-found || true
   done
   kubectl -n "$NS" delete pvc --all --wait=true || true
+  # PVC deletion returns before the EBS CSI driver has deleted the volumes.
+  # Wait for the PVs, or terraform destroy removes the driver first and the
+  # volumes are left behind (detached, still billed).
+  log "waiting for EBS volumes to be released"
+  kubectl wait --for=delete pv --all --timeout=300s 2>/dev/null || warn "some PVs still exist; check for leftover EBS volumes after destroy"
 fi
 
 log "terraform destroy"

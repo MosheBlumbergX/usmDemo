@@ -33,6 +33,7 @@ tfplan
 .c3.pid
 .c3.log
 .make-up.log
+.make-down.log
 kubeconfig*
 confluent-for-kubernetes/
 *.tgz
